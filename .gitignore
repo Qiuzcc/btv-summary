@@ -1,5 +1,12 @@
-.venv/
-__pycache__/
-*.egg-info/
+node_modules/
+dist/
 out/
 .cache/
+build/bin/
+*.local
+.DS_Store
+*.tsbuildinfo
+release/
+.trae-html-share-packages/
+resources/yt-dlp
+resources/yt-dlp.exe

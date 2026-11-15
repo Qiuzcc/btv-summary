@@ -1,0 +1,117 @@
+/**
+ * 主进程与渲染层共享的领域类型。
+ * 字段与 archive/btv/models.py 的 dataclass 一一对应。
+ */
+
+export interface Segment {
+  start: number
+  end: number
+  text: string
+}
+
+export type TranscriptSource = 'subtitle' | 'asr' | 'unknown' | string
+
+export interface Transcript {
+  bvid: string
+  title: string
+  owner: string
+  duration: number
+  source: TranscriptSource
+  segments: Segment[]
+}
+
+/** 与 Python transcript.json 落盘结构一致的序列化形状 */
+export interface TranscriptDTO {
+  bvid: string
+  title: string
+  owner: string
+  duration: number
+  source: TranscriptSource
+  segments: Array<{ start: number; end: number; text: string }>
+}
+
+export type TaskState =
+  | 'queued'
+  | 'running'
+  | 'cancelling'
+  | 'done'
+  | 'error'
+  | 'cancelled'
+  | 'interrupted'
+
+export interface ProgressSnapshot {
+  phase: string
+  message: string
+  done: number
+  total: number
+  updatedAt: string
+}
+
+export interface TaskRecord {
+  id: string
+  bvid: string
+  title: string
+  state: TaskState
+  params: TaskParams
+  outputPath: string | null
+  progress: ProgressSnapshot | null
+  error: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface TaskParams {
+  url: string
+  detail: 'brief' | 'normal' | 'deep'
+  format: 'md' | 'json'
+  refresh: boolean
+  noSubtitle: boolean
+  chunkSeconds: number | null
+  model: string | null
+  output: string | null
+}
+
+export interface UsageItem {
+  model: string
+  calls?: number
+  prompt_tokens?: number
+  completion_tokens?: number
+  seconds?: number
+  cost: number
+}
+
+export interface UsageRecord {
+  ts: string
+  bvid: string
+  title: string
+  llm: { items: UsageItem[]; unknown: UsageItem[]; cost: number }
+  asr: { items: UsageItem[]; unknown: UsageItem[]; cost: number }
+  total: number
+}
+
+export interface AppConfig {
+  bilibili: { sessdata: string }
+  llm: {
+    base_url: string
+    api_key: string
+    model: string
+    temperature: number
+    max_chars: number
+    max_retries: number
+  }
+  asr: { language: string }
+  cloud_asr: { base_url: string; api_key: string; model: string }
+  pricing: {
+    llm: Record<string, [number, number]>
+    asr: Record<string, number>
+  }
+  concurrency: { videos: number; llm: number; asr: number }
+}
+
+export interface UsageAggregate {
+  count: number
+  grandTotal: number
+  llm: Record<string, { calls: number; prompt_tokens: number; completion_tokens: number; cost: number }>
+  asr: Record<string, { seconds: number; cost: number }>
+  unknown: Array<{ model: string; kind: 'LLM' | 'ASR' }>
+}

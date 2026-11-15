@@ -1,0 +1,116 @@
+import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { TaskManager } from '../src/main/core/task-manager'
+import { DEFAULT_CONFIG, type AppConfig } from '../src/main/core/config'
+import type { TaskParams } from '../src/shared/types'
+
+// mock pipeline 避免真实网络；默认用 gate 控制何时完成，便于测试取消
+let gate: Promise<void> | null = null
+vi.mock('../src/main/core/pipeline', () => ({
+  runPipeline: vi.fn(async (deps: any) => {
+    deps.progress('meta', 'ok', 1, 1)
+    if (gate) await gate
+    return {
+      transcript: { bvid: 'BV1TEST12345', title: '测试', owner: '', duration: 10, source: 'asr', segments: [] },
+      markdown: '# 测试',
+      outputPath: '/tmp/out.md',
+      usageRecord: { ts: 'x', bvid: 'BV1TEST12345', title: '测试', llm: { items: [], unknown: [], cost: 0 }, asr: { items: [], unknown: [], cost: 0 }, total: 0 }
+    }
+  })
+}))
+
+let dir: string
+beforeEach(() => {
+  dir = join(tmpdir(), 'btv-tm-' + Math.random().toString(36).slice(2, 8))
+  mkdirSync(dir, { recursive: true })
+  process.env['BTV_USERDATA'] = dir
+})
+afterEach(() => {
+  gate = null
+  rmSync(dir, { recursive: true, force: true })
+  delete process.env['BTV_USERDATA']
+})
+
+function baseParams(): TaskParams {
+  return {
+    url: 'BV1TEST12345',
+    detail: 'normal',
+    format: 'md',
+    refresh: false,
+    noSubtitle: false,
+    chunkSeconds: null,
+    model: null,
+    output: null
+  }
+}
+
+describe('TaskManager', () => {
+  const config = structuredClone(DEFAULT_CONFIG) as AppConfig
+
+  it('提交任务后入队并完成', async () => {
+    gate = null
+    const tm = new TaskManager({ config })
+    const task = tm.submit(baseParams())
+    expect(task.state).toBe('queued')
+    await new Promise((r) => setTimeout(r, 50))
+    const updated = tm.get(task.id)!
+    expect(updated.state).toBe('done')
+    expect(updated.outputPath).toBe('/tmp/out.md')
+  })
+
+  it('FR-20 同一 BV 重复提交被拒绝', () => {
+    const tm = new TaskManager({ config })
+    tm.submit(baseParams())
+    expect(() => tm.submit(baseParams())).toThrow(/已有进行中的任务/)
+  })
+
+  it('FR-21 取消排队中任务', async () => {
+    // gate 阻塞首个任务，使后续任务保持 queued
+    let release: () => void = () => {}
+    gate = new Promise((r) => { release = r })
+    const tm = new TaskManager({ config })
+    tm.submit(baseParams()) // t1 运行中，被 gate 阻塞
+    await new Promise((r) => setTimeout(r, 20))
+    const t2 = tm.submit({ ...baseParams(), url: 'BV1OTHER0001' })
+    tm.cancel(t2.id)
+    const state = tm.get(t2.id)!.state
+    expect(['cancelled', 'cancelling']).toContain(state)
+    release()
+  })
+
+  it('FR-22 重启后运行中任务标记为 interrupted 并可续跑', () => {
+    // 预置 tasks.json 含 running 任务
+    const tasksPath = join(dir, 'tasks.json')
+    writeFileSync(
+      tasksPath,
+      JSON.stringify([
+        {
+          id: 'old-1',
+          bvid: 'BV1TEST12345',
+          title: 't',
+          state: 'running',
+          params: baseParams(),
+          outputPath: null,
+          progress: null,
+          error: null,
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-01-01T00:00:00.000Z'
+        }
+      ])
+    )
+    const tm = new TaskManager({ config })
+    expect(tm.get('old-1')!.state).toBe('interrupted')
+    tm.resume('old-1')
+    expect(tm.get('old-1')!.state).toBe('queued')
+  })
+
+  it('持久化 tasks.json 落盘', async () => {
+    gate = null
+    const tm = new TaskManager({ config })
+    tm.submit(baseParams())
+    await new Promise((r) => setTimeout(r, 50))
+    expect(existsSync(join(dir, 'tasks.json'))).toBe(true)
+  })
+})
