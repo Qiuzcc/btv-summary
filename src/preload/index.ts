@@ -18,6 +18,7 @@ const api: BtvApi = {
     list: () => ipcRenderer.invoke('task:list'),
     cancel: (taskId) => ipcRenderer.invoke('task:cancel', taskId),
     resume: (taskId) => ipcRenderer.invoke('task:resume', taskId),
+    remove: (taskId) => ipcRenderer.invoke('task:remove', taskId),
     onEvent: (listener) => {
       const handler = (_event: unknown, payload: TaskEvent) => listener(payload)
       ipcRenderer.on('task:event', handler)

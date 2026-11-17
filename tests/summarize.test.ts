@@ -128,8 +128,20 @@ describe('TR-9.2 summarize 各路径', () => {
     expect(md).toContain('## TL;DR')
     expect(md).toContain('## 核心要点')
     expect(md).toContain('## 值得追问')
+    expect(md.endsWith('## 原始转写\n\n第一段\n第二段')).toBe(true)
     // map 调用 2 次 + reduce 1 次
     expect(llmChat).toHaveBeenCalledTimes(3)
+  })
+
+  it('字幕来源在末尾追加原始字幕', async () => {
+    const llmChat = vi.fn(async (_cfg, messages) => {
+      const user = messages[messages.length - 1].content as string
+      return user.includes('请输出一篇中文 Markdown') ? '# 测试视频\n\n## TL;DR\n摘要' : '分段要点'
+    })
+    const transcript = makeTranscript([{ start: 0, end: 10, text: '字幕原文' }])
+    transcript.source = 'subtitle'
+    const md = await summarize(transcript, config, { llmChat })
+    expect(md.endsWith('## 原始字幕\n\n字幕原文')).toBe(true)
   })
 
   it('单块失败用带时间戳原文降级', async () => {

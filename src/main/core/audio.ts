@@ -54,28 +54,12 @@ function defaultSpawn(command: string, args: string[], opts: { signal?: AbortSig
   })
 }
 
-/** 解析随包二进制：resources/yt-dlp、resources/ffmpeg（平台后缀在打包时处理）
- *  随包文件缺失时回退到 PATH 中的同名命令，便于开发态直接使用系统安装的版本 */
+/** 解析随包二进制：resources/yt-dlp、resources/ffmpeg（平台后缀在打包时处理） */
 export function resolveBinaries(baseDir = resourcesDir()): Binaries {
   const platformExt = process.platform === 'win32' ? '.exe' : ''
-  const resolveOne = (name: string): string => {
-    const bundled = join(baseDir, name + platformExt)
-    return existsSync(bundled) ? bundled : name
-  }
-  return { ytDlp: resolveOne('yt-dlp'), ffmpeg: resolveOne('ffmpeg') }
-}
-
-/** 检测 ffmpeg 是否存在（随包或系统 PATH） */
-export async function ffmpegAvailable(
-  ffmpegPath: string,
-  spawnFn: SpawnFn = defaultSpawn
-): Promise<boolean> {
-  if (existsSync(ffmpegPath)) return true
-  try {
-    const result = await spawnFn('ffmpeg', ['-version'])
-    return result.code === 0
-  } catch {
-    return false
+  return {
+    ytDlp: join(baseDir, 'yt-dlp' + platformExt),
+    ffmpeg: join(baseDir, 'ffmpeg' + platformExt)
   }
 }
 
@@ -145,8 +129,8 @@ export async function downloadAudio(
   const mp3Path = join(destDir, 'audio.mp3')
   if (existsSync(mp3Path)) return mp3Path
 
-  if (!(await ffmpegAvailable(ffmpegPath, spawnFn))) {
-    throw new Error('未找到 ffmpeg，请先安装：brew install ffmpeg')
+  if (!existsSync(ffmpegPath)) {
+    throw new Error('未找到随包 ffmpeg，请重新安装应用')
   }
 
   // 兼容旧版缓存的 wav：直接转码

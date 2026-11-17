@@ -36,7 +36,7 @@ class ChildProcessRegistry {
 
 export interface TaskManagerOptions {
   config: AppConfig
-  onEvent?: (event: { type: 'progress' | 'state'; taskId: string; payload?: unknown }) => void
+  onEvent?: (event: { type: 'progress' | 'state' | 'removed'; taskId: string; payload?: unknown }) => void
   fetchImpl?: typeof fetch
 }
 
@@ -221,6 +221,17 @@ export class TaskManager {
         this.cancel(task.id)
       }
     }
+  }
+
+  remove(taskId: string): void {
+    const task = this.tasks.get(taskId)
+    if (!task) return
+    if (task.state !== 'done' && task.state !== 'error' && task.state !== 'cancelled' && task.state !== 'interrupted') {
+      throw new Error('仅允许删除已完成、失败、已取消或已中断的任务')
+    }
+    this.tasks.delete(taskId)
+    this.persist()
+    this.onEvent?.({ type: 'removed', taskId })
   }
 
   /** 续跑已中断任务：重新入队 */

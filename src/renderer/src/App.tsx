@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useState, type JSX } from 'react'
+import ReactMarkdown, { type Components } from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import type { TaskEvent } from '../../shared/api-contract'
 import type { AppConfig, TaskParams, TaskRecord } from '../../shared/types'
 
@@ -28,7 +30,9 @@ export default function App(): JSX.Element {
   const [refresh, setRefresh] = useState(0)
 
   const reloadTasks = useCallback(() => {
-    void window.btv.task.list().then(setTasks)
+    void window.btv.task.list().then(setTasks).catch((error: unknown) => {
+      console.error('刷新任务列表失败', error)
+    })
   }, [])
 
   useEffect(() => {
@@ -58,7 +62,14 @@ export default function App(): JSX.Element {
         ))}
       </nav>
       <main className="flex-1 overflow-auto p-6">
-        {tab === 'new' && <NewTaskPage onSubmitted={() => setRefresh((n) => n + 1)} />}
+        {tab === 'new' && (
+          <NewTaskPage
+            onSubmitted={() => {
+              setRefresh((n) => n + 1)
+              setTab('tasks')
+            }}
+          />
+        )}
         {tab === 'tasks' && <TasksPage tasks={tasks} onChange={reloadTasks} />}
         {tab === 'history' && <HistoryPage />}
         {tab === 'settings' && <SettingsPage />}
@@ -176,7 +187,27 @@ function NewTaskPage({ onSubmitted }: { onSubmitted: () => void }): JSX.Element 
 
 function TasksPage({ tasks, onChange }: { tasks: TaskRecord[]; onChange: () => void }): JSX.Element {
   const [selected, setSelected] = useState<string | null>(null)
+  const [deleting, setDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
   const active = tasks.find((t) => t.id === selected) ?? tasks[0] ?? null
+
+  async function removeActive(): Promise<void> {
+    if (!active || deleting) return
+    if (!confirm('确认删除该任务？仅删除任务记录，不删除输出文件。')) return
+
+    const taskId = active.id
+    setDeleteError(null)
+    setDeleting(true)
+    try {
+      await window.btv.task.remove(taskId)
+      setSelected((current) => current === taskId ? null : current)
+      onChange()
+    } catch (e) {
+      setDeleteError(`删除任务失败：${(e as Error).message}`)
+    } finally {
+      setDeleting(false)
+    }
+  }
 
   return (
     <div className="flex h-full gap-4">
@@ -253,7 +284,17 @@ function TasksPage({ tasks, onChange }: { tasks: TaskRecord[]; onChange: () => v
                   续跑
                 </button>
               )}
+              {(active.state === 'done' || active.state === 'error' || active.state === 'cancelled' || active.state === 'interrupted') && (
+                <button
+                  onClick={() => void removeActive()}
+                  disabled={deleting}
+                  className="rounded-md bg-red-600 px-4 py-1.5 text-sm text-white hover:bg-red-500 disabled:opacity-50"
+                >
+                  {deleting ? '删除中...' : '删除'}
+                </button>
+              )}
             </div>
+            {deleteError && <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">{deleteError}</div>}
           </div>
         ) : (
           <p className="text-sm text-slate-500">选择左侧任务查看详情</p>
@@ -274,13 +315,52 @@ function StateBadge({ state }: { state: string }): JSX.Element {
           : state === 'cancelled' || state === 'interrupted'
             ? 'bg-slate-200 text-slate-600'
             : 'bg-amber-100 text-amber-700'
-  return <span className={`rounded px-2 py-0.5 text-xs ${color}`}>{STATE_LABEL[state] ?? state}</span>
+  return (
+    <span className={`inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs ${color}`}>
+      {state === 'running' && (
+        <span
+          aria-hidden="true"
+          className="h-3 w-3 animate-spin rounded-full border border-current border-t-transparent motion-reduce:animate-none"
+        />
+      )}
+      {STATE_LABEL[state] ?? state}
+    </span>
+  )
+}
+
+const markdownComponents: Components = {
+  h1: ({ children }) => <h1 className="mb-5 mt-7 border-b border-slate-200 pb-3 text-2xl font-bold text-slate-900 first:mt-0">{children}</h1>,
+  h2: ({ children }) => <h2 className="mb-4 mt-7 text-xl font-semibold text-slate-900">{children}</h2>,
+  h3: ({ children }) => <h3 className="mb-3 mt-6 text-lg font-semibold text-slate-900">{children}</h3>,
+  h4: ({ children }) => <h4 className="mb-3 mt-5 text-base font-semibold text-slate-900">{children}</h4>,
+  h5: ({ children }) => <h5 className="mb-2 mt-4 text-sm font-semibold text-slate-900">{children}</h5>,
+  h6: ({ children }) => <h6 className="mb-2 mt-4 text-sm font-semibold text-slate-600">{children}</h6>,
+  p: ({ children }) => <p className="mb-4 leading-7 last:mb-0">{children}</p>,
+  strong: ({ children }) => <strong className="font-semibold text-slate-900">{children}</strong>,
+  em: ({ children }) => <em className="italic">{children}</em>,
+  ul: ({ children }) => <ul className="mb-4 list-disc space-y-1 pl-6">{children}</ul>,
+  ol: ({ children }) => <ol className="mb-4 list-decimal space-y-1 pl-6">{children}</ol>,
+  li: ({ children }) => <li className="pl-1 leading-7">{children}</li>,
+  blockquote: ({ children }) => <blockquote className="mb-4 border-l-4 border-slate-300 bg-slate-50 px-4 py-2 text-slate-600">{children}</blockquote>,
+  a: ({ href, children }) => href ? (
+    <a href={href} target="_blank" rel="noreferrer" className="text-blue-600 underline decoration-blue-300 underline-offset-2 hover:text-blue-800">{children}</a>
+  ) : (
+    <span className="text-slate-500 underline decoration-slate-300 underline-offset-2">{children}</span>
+  ),
+  code: ({ className, children }) => <code className={`rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[0.875em] text-slate-800 ${className ?? ''}`}>{children}</code>,
+  pre: ({ children }) => <pre className="mb-4 overflow-x-auto rounded-lg bg-slate-900 p-4 text-sm leading-6 text-slate-100 [&_code]:bg-transparent [&_code]:p-0 [&_code]:text-inherit">{children}</pre>,
+  table: ({ children }) => <div className="mb-4 overflow-x-auto"><table className="w-full border-collapse text-sm">{children}</table></div>,
+  th: ({ children }) => <th className="border border-slate-300 bg-slate-50 px-3 py-2 text-left font-semibold text-slate-900">{children}</th>,
+  td: ({ children }) => <td className="border border-slate-200 px-3 py-2 align-top">{children}</td>,
+  hr: () => <hr className="my-6 border-slate-200" />
 }
 
 function HistoryPage(): JSX.Element {
   const [items, setItems] = useState<any[]>([])
   const [md, setMd] = useState<string>('')
   const [selected, setSelected] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     void window.btv.output.listHistory().then(setItems)
@@ -288,8 +368,35 @@ function HistoryPage(): JSX.Element {
 
   useEffect(() => {
     if (!selected) return
-    void window.btv.output.readMarkdown(selected).then(setMd)
+
+    let cancelled = false
+    setMd('')
+    setError(null)
+    setLoading(true)
+    void window.btv.output.readMarkdown(selected)
+      .then((content) => {
+        if (!cancelled) setMd(content)
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) {
+          setMd('')
+          setError((e as Error).message)
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+
+    return () => { cancelled = true }
   }, [selected])
+
+  function selectHistory(path: string): void {
+    if (path === selected) return
+    setSelected(path)
+    setMd('')
+    setError(null)
+    setLoading(true)
+  }
 
   return (
     <div className="flex h-full gap-4">
@@ -299,7 +406,7 @@ function HistoryPage(): JSX.Element {
         {items.map((it) => (
           <button
             key={it.dir}
-            onClick={() => setSelected(it.summaryPath)}
+            onClick={() => selectHistory(it.summaryPath)}
             className={`block w-full rounded-md border p-3 text-left text-sm ${
               selected === it.summaryPath ? 'border-slate-900 bg-white' : 'border-slate-200 bg-white hover:border-slate-400'
             }`}
@@ -311,7 +418,19 @@ function HistoryPage(): JSX.Element {
       </div>
       <div className="flex-1 overflow-auto rounded-md bg-white p-5 ring-1 ring-slate-200">
         {selected ? (
-          <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed">{md || '（空）'}</pre>
+          loading ? (
+            <p className="text-sm text-slate-500">加载中...</p>
+          ) : error ? (
+            <div role="alert" className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">读取失败：{error}</div>
+          ) : md.trim() ? (
+            <div className="text-[15px] leading-7 text-slate-700">
+              <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents} skipHtml>
+                {md}
+              </ReactMarkdown>
+            </div>
+          ) : (
+            <p className="text-sm text-slate-500">（空）</p>
+          )
         ) : (
           <p className="text-sm text-slate-500">选择左侧历史查看 Markdown</p>
         )}

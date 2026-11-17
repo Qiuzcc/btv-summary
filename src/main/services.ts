@@ -54,6 +54,8 @@ export function bootstrap(getWindow: () => BrowserWindow | null): Services {
         sendTaskEvent(getWindow(), { type: 'state', taskId, task: payload as any })
       } else if (type === 'progress') {
         sendTaskEvent(getWindow(), { type: 'progress', taskId, progress: payload as any })
+      } else if (type === 'removed') {
+        sendTaskEvent(getWindow(), { type: 'removed', taskId })
       }
     }
   })
@@ -82,6 +84,7 @@ export function bootstrap(getWindow: () => BrowserWindow | null): Services {
   ipcMain.handle('task:list', () => taskManager.list())
   ipcMain.handle('task:cancel', (_e, taskId: string) => taskManager.cancel(taskId))
   ipcMain.handle('task:resume', (_e, taskId: string) => taskManager.resume(taskId))
+  ipcMain.handle('task:remove', (_e, taskId: string) => taskManager.remove(taskId))
 
   // ---- 成本 ----
   ipcMain.handle('usage:aggregate', () => aggregate(loadRecords()))

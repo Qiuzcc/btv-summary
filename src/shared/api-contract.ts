@@ -7,6 +7,7 @@ import type { AppConfig, ProgressSnapshot, TaskParams, TaskRecord, UsageAggregat
 export type TaskEvent =
   | { type: 'state'; taskId: string; task: TaskRecord }
   | { type: 'progress'; taskId: string; progress: ProgressSnapshot }
+  | { type: 'removed'; taskId: string }
 
 export interface HistoryItem {
   bvid: string
@@ -30,6 +31,7 @@ export interface BtvApi {
     list: () => Promise<TaskRecord[]>
     cancel: (taskId: string) => Promise<void>
     resume: (taskId: string) => Promise<void>
+    remove: (taskId: string) => Promise<void>
     onEvent: (listener: (event: TaskEvent) => void) => () => void
   }
   usage: {

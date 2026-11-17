@@ -179,7 +179,9 @@ export async function summarize(
   if (!markdown.trimStart().startsWith('#')) {
     markdown = `# ${transcript.title}\n\n${markdown}`
   }
-  return markdown
+  const originalTitle = transcript.source === 'subtitle' ? '原始字幕' : '原始转写'
+  const originalText = transcript.segments.map((segment) => segment.text).join('\n')
+  return `${markdown.trimEnd()}\n\n## ${originalTitle}\n\n${originalText}`
 }
 
 /** 对齐 summarize._strip_code_fence */

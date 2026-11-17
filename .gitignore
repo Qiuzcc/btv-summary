@@ -10,3 +10,5 @@ release/
 .trae-html-share-packages/
 resources/yt-dlp
 resources/yt-dlp.exe
+resources/ffmpeg
+resources/ffmpeg.exe

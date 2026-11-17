@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } 
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { downloadAudio, writeCookieFile, type SpawnFn } from '../src/main/core/audio'
+import { downloadAudio, resolveBinaries, writeCookieFile, type SpawnFn } from '../src/main/core/audio'
 
 function tmpDir(): string {
   const dir = join(tmpdir(), 'btv-audio-' + Math.random().toString(36).slice(2, 8))
@@ -48,36 +48,50 @@ describe('音频模块', () => {
 
   it('TR-7.1 旧 audio.wav 转码复用，不调用 yt-dlp', async () => {
     writeFileSync(join(dir, 'audio.wav'), 'wav')
+    const ffmpegPath = join(dir, 'ffmpeg')
+    writeFileSync(ffmpegPath, '')
     const spawnFn = vi.fn(async (cmd: string) => {
       if (cmd.includes('ffmpeg')) {
         writeFileSync(join(dir, 'audio.mp3'), 'mp3')
       }
       return { stdout: '', stderr: '', code: 0, process: { on: vi.fn() } as any }
     })
-    const result = await downloadAudio('https://x', dir, { spawnFn: spawnFn as unknown as SpawnFn, ffmpegPath: 'ffmpeg' })
+    const result = await downloadAudio('https://x', dir, { spawnFn: spawnFn as unknown as SpawnFn, ffmpegPath })
     expect(result).toBe(join(dir, 'audio.mp3'))
     const cmds = spawnFn.mock.calls.map((c) => c[0])
     expect(cmds.every((c: unknown) => String(c).includes('ffmpeg'))).toBe(true)
     expect(cmds.some((c: unknown) => String(c).includes('yt-dlp'))).toBe(false)
   })
 
-  it('ffmpeg 缺失报中文错误', async () => {
-    const spawnFn = vi.fn(async () => {
-      throw new Error('not found')
-    })
+  it('ffmpeg 缺失报中文错误，不探测系统 PATH', async () => {
+    const spawnFn = vi.fn()
     await expect(
       downloadAudio('https://x', dir, { spawnFn: spawnFn as unknown as SpawnFn, ffmpegPath: '/no/such/ffmpeg' })
-    ).rejects.toThrow(/未找到 ffmpeg/)
+    ).rejects.toThrow(/未找到随包 ffmpeg/)
+    expect(spawnFn).not.toHaveBeenCalled()
+  })
+
+  it('yt-dlp 和 ffmpeg 仅解析随包路径', () => {
+    const baseDir = join(dir, 'missing')
+    const ext = process.platform === 'win32' ? '.exe' : ''
+    expect(resolveBinaries(baseDir)).toEqual({
+      ytDlp: join(baseDir, 'yt-dlp' + ext),
+      ffmpeg: join(baseDir, 'ffmpeg' + ext)
+    })
   })
 
   it('下载 + 转码全流程', async () => {
+    const ytDlpPath = join(dir, 'yt-dlp')
+    const ffmpegPath = join(dir, 'ffmpeg')
+    writeFileSync(ytDlpPath, '')
+    writeFileSync(ffmpegPath, '')
     const spawnFn = spawnThatWrites({})
-    const result = await downloadAudio('https://x', dir, { spawnFn: spawnFn as unknown as SpawnFn, ytDlpPath: 'yt-dlp', ffmpegPath: 'ffmpeg' })
+    const result = await downloadAudio('https://x', dir, { spawnFn: spawnFn as unknown as SpawnFn, ytDlpPath, ffmpegPath })
     expect(result).toBe(join(dir, 'audio.mp3'))
     expect(existsSync(join(dir, 'audio.mp3'))).toBe(true)
     const cmds = spawnFn.mock.calls.map((c: unknown[]) => c[0])
-    expect(cmds).toContain('yt-dlp')
-    expect(cmds).toContain('ffmpeg')
+    expect(cmds).toContain(ytDlpPath)
+    expect(cmds).toContain(ffmpegPath)
   })
 
   it('cookies.txt 生成内容与权限 0600', () => {

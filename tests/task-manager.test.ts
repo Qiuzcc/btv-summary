@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -112,5 +112,96 @@ describe('TaskManager', () => {
     tm.submit(baseParams())
     await new Promise((r) => setTimeout(r, 50))
     expect(existsSync(join(dir, 'tasks.json'))).toBe(true)
+  })
+
+  it.each(['done', 'error', 'cancelled', 'interrupted'] as const)(
+    '允许删除 %s 状态任务并持久化移除',
+    (state) => {
+      const tasksPath = join(dir, 'tasks.json')
+      writeFileSync(
+        tasksPath,
+        JSON.stringify([
+          {
+            id: 'task-1',
+            bvid: 'BV1TEST12345',
+            title: 't',
+            state,
+            params: baseParams(),
+            outputPath: '/tmp/out.md',
+            progress: null,
+            error: null,
+            createdAt: '2026-01-01T00:00:00.000Z',
+            updatedAt: '2026-01-01T00:00:00.000Z'
+          }
+        ])
+      )
+      const onEvent = vi.fn()
+      const tm = new TaskManager({ config, onEvent })
+
+      tm.remove('task-1')
+
+      expect(tm.get('task-1')).toBeUndefined()
+      expect(tm.list()).toEqual([])
+      expect(JSON.parse(readFileSync(tasksPath, 'utf8'))).toEqual([])
+      expect(onEvent).toHaveBeenCalledWith({ type: 'removed', taskId: 'task-1' })
+      expect(new TaskManager({ config }).list()).toEqual([])
+    }
+  )
+
+  it('拒绝删除 queued、running、cancelling 状态任务', async () => {
+    let release: () => void = () => {}
+    gate = new Promise((r) => { release = r })
+    const onEvent = vi.fn()
+    const tm = new TaskManager({ config, onEvent })
+    const task = tm.submit(baseParams())
+
+    expect(task.state).toBe('queued')
+    expect(() => tm.remove(task.id)).toThrow(/仅允许删除/)
+    await new Promise((r) => setTimeout(r, 20))
+    expect(tm.get(task.id)!.state).toBe('running')
+    expect(() => tm.remove(task.id)).toThrow(/仅允许删除/)
+    tm.cancel(task.id)
+    expect(tm.get(task.id)!.state).toBe('cancelling')
+    expect(() => tm.remove(task.id)).toThrow(/仅允许删除/)
+
+    expect(tm.get(task.id)).toBeDefined()
+    expect(onEvent).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'removed' }))
+    release()
+    await new Promise((r) => setTimeout(r, 50))
+  })
+
+  it('删除任务不影响输出、缓存和用量文件', () => {
+    const outputPath = join(dir, 'output', 'summary.md')
+    const transcriptPath = join(dir, 'cache', 'BV1TEST12345', 'transcript.json')
+    const usagePath = join(dir, 'cache', 'usage.jsonl')
+    mkdirSync(join(dir, 'output'), { recursive: true })
+    mkdirSync(join(dir, 'cache', 'BV1TEST12345'), { recursive: true })
+    writeFileSync(outputPath, '# summary')
+    writeFileSync(transcriptPath, '{"segments":[]}')
+    writeFileSync(usagePath, '{"total":1}\n')
+    writeFileSync(
+      join(dir, 'tasks.json'),
+      JSON.stringify([
+        {
+          id: 'task-1',
+          bvid: 'BV1TEST12345',
+          title: 't',
+          state: 'done',
+          params: baseParams(),
+          outputPath,
+          progress: null,
+          error: null,
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-01-01T00:00:00.000Z'
+        }
+      ])
+    )
+    const tm = new TaskManager({ config })
+
+    tm.remove('task-1')
+
+    expect(readFileSync(outputPath, 'utf8')).toBe('# summary')
+    expect(readFileSync(transcriptPath, 'utf8')).toBe('{"segments":[]}')
+    expect(readFileSync(usagePath, 'utf8')).toBe('{"total":1}\n')
   })
 })
