@@ -1,5 +1,5 @@
 /**
- * 单任务执行管线：解析 BV → 字幕/转写 → 总结 → 写盘 → 成本记账。
+ * 单任务执行管线：解析 BV → 字幕/转写 → 总结 → 写盘。
  * 对齐 archive/btv/cli.py 的 _load_transcript + cmd_summarize 流程，
  * 并接入 LLM/ASR 全局限流信号量与子进程注册（供取消回收）。
  */
@@ -10,10 +10,9 @@ import { BilibiliClient, resolveBvid } from './bilibili'
 import { downloadAudio, type ChildProcessRegistry } from './audio'
 import { transcribe } from './asr'
 import { summarize } from './summarize'
-import { UsageCollector } from './usage'
 import { bvCacheDir, outputBaseDir } from './paths'
 import type { Semaphore } from './semaphore'
-import { chat, type ChatOptions, type LlmUsage } from './llm'
+import { chat, type ChatOptions } from './llm'
 import { safeDirname, serializeTranscript } from '../../shared/transcript'
 import type { Segment, Transcript } from '../../shared/types'
 import type { TaskParams } from '../../shared/types'
@@ -75,7 +74,6 @@ export interface PipelineResult {
   transcript: Transcript
   markdown: string
   outputPath: string
-  usageRecord: ReturnType<UsageCollector['buildRecord']>
 }
 
 /** 对齐 cli._load_transcript：字幕优先，失败降级音频转写 */
@@ -87,7 +85,6 @@ async function loadTranscript(
   registry: ChildProcessRegistry,
   signal: AbortSignal,
   progress: PipelineDeps['progress'],
-  onAsrUsage: (model: string, seconds: number) => void,
   fetchImpl?: typeof fetch
 ): Promise<Transcript> {
   const sessdata = config.bilibili.sessdata || ''
@@ -131,13 +128,11 @@ async function loadTranscript(
     const result = await transcribe(
       audioPath,
       config,
-      (model, seconds) => {
-        onAsrUsage(model, seconds)
-        progress('asr', `转写中，累计 ${seconds.toFixed(0)}s`, 1, 1)
-      },
       { fetchImpl, signal }
     )
     segments.push(...result)
+    const seconds = segments.length > 0 ? Number(segments[segments.length - 1].end) : 0
+    progress('asr', `转写中，累计 ${seconds.toFixed(0)}s`, 1, 1)
   } finally {
     asrSemaphore.release()
   }
@@ -158,9 +153,6 @@ export async function runPipeline(deps: PipelineDeps): Promise<PipelineResult> {
   const { config, params, llmSemaphore, asrSemaphore, registry, signal, progress, fetchImpl } = deps
 
   const bvid = await resolveBvid(params.url, fetchImpl)
-  const collector = new UsageCollector(config, bvid, bvid)
-
-  const onAsrUsage = (model: string, seconds: number) => collector.recordAsr(model, seconds)
 
   const transcript = await loadTranscript(
     bvid,
@@ -170,10 +162,8 @@ export async function runPipeline(deps: PipelineDeps): Promise<PipelineResult> {
     registry,
     signal,
     progress,
-    onAsrUsage,
     fetchImpl
   )
-  collector.title = transcript.title
 
   // 保存 transcript 缓存
   const bvCache = bvCacheDir(bvid)
@@ -183,13 +173,11 @@ export async function runPipeline(deps: PipelineDeps): Promise<PipelineResult> {
   progress('summarize', `《${transcript.title}》· ${transcript.segments.length} 段 · ${transcript.source}`, 0, 1)
 
   const llmChat = withLlmSemaphore(llmSemaphore, signal)
-  const onUsage = (usage: LlmUsage) => collector.recordLlm(usage)
 
   const markdown = await summarize(transcript, config, {
     detail: params.detail,
     chunkSeconds: params.chunkSeconds ?? undefined,
     progress: (message) => progress('summarize', message, 0, 1),
-    onUsage,
     llmChat
   })
 
@@ -216,7 +204,6 @@ export async function runPipeline(deps: PipelineDeps): Promise<PipelineResult> {
     )
   }
 
-  const usageRecord = collector.save()
   progress('done', `完成，输出 ${outPath}`, 1, 1)
-  return { transcript, markdown, outputPath: outPath, usageRecord }
+  return { transcript, markdown, outputPath: outPath }
 }

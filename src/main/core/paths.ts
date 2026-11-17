@@ -33,10 +33,6 @@ export function bvCacheDir(bvid: string): string {
   return join(cacheDir(), bvid)
 }
 
-export function usageFile(): string {
-  return join(cacheDir(), 'usage.jsonl')
-}
-
 export function tasksFile(): string {
   return join(userDataDir(), 'tasks.json')
 }

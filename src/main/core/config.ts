@@ -1,6 +1,6 @@
 /**
  * 配置读写：默认值、深度合并、dotted-path 访问、密钥加密信封与打码展示。
- * 结构对齐 archive/btv/config.py 的 DEFAULTS，并扩展 pricing 与 concurrency。
+ * 结构对齐 archive/btv/config.py 的 DEFAULTS，并扩展 concurrency。
  */
 import { chmodSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
@@ -32,7 +32,6 @@ export const DEFAULT_CONFIG: AppConfig = {
     api_key: '',
     model: 'XingChenAGI/XingChenASR-Diarize-V3.0'
   },
-  pricing: { llm: {}, asr: {} },
   concurrency: { videos: 2, llm: 5, asr: 1 }
 }
 

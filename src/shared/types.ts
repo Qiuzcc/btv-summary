@@ -71,24 +71,6 @@ export interface TaskParams {
   output: string | null
 }
 
-export interface UsageItem {
-  model: string
-  calls?: number
-  prompt_tokens?: number
-  completion_tokens?: number
-  seconds?: number
-  cost: number
-}
-
-export interface UsageRecord {
-  ts: string
-  bvid: string
-  title: string
-  llm: { items: UsageItem[]; unknown: UsageItem[]; cost: number }
-  asr: { items: UsageItem[]; unknown: UsageItem[]; cost: number }
-  total: number
-}
-
 export interface AppConfig {
   bilibili: { sessdata: string }
   llm: {
@@ -101,17 +83,5 @@ export interface AppConfig {
   }
   asr: { language: string }
   cloud_asr: { base_url: string; api_key: string; model: string }
-  pricing: {
-    llm: Record<string, [number, number]>
-    asr: Record<string, number>
-  }
   concurrency: { videos: number; llm: number; asr: number }
-}
-
-export interface UsageAggregate {
-  count: number
-  grandTotal: number
-  llm: Record<string, { calls: number; prompt_tokens: number; completion_tokens: number; cost: number }>
-  asr: Record<string, { seconds: number; cost: number }>
-  unknown: Array<{ model: string; kind: 'LLM' | 'ASR' }>
 }

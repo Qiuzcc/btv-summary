@@ -18,7 +18,6 @@ import {
 import { SafeStorageCodec } from './core/safe-storage-codec'
 import { migrateLegacyData } from './core/migration'
 import { configFile, outputBaseDir } from './core/paths'
-import { aggregate, loadRecords, resetRecords } from './core/usage'
 import { TaskManager } from './core/task-manager'
 import type { HistoryItem, TaskEvent } from '../shared/api-contract'
 import type { TaskParams } from '../shared/types'
@@ -63,6 +62,8 @@ export function bootstrap(getWindow: () => BrowserWindow | null): Services {
   // ---- 配置 ----
   ipcMain.handle('config:get', () => config)
   ipcMain.handle('config:masked', () => maskConfig(config))
+  ipcMain.handle('config:path', () => configFile())
+  ipcMain.handle('config:openFile', () => shell.openPath(configFile()))
   ipcMain.handle('config:set', (_e, key: string, value: string) => {
     // 密钥字段：SESSDATA 支持完整 Cookie 解析
     const cfg = config as unknown as Record<string, unknown>
@@ -85,10 +86,6 @@ export function bootstrap(getWindow: () => BrowserWindow | null): Services {
   ipcMain.handle('task:cancel', (_e, taskId: string) => taskManager.cancel(taskId))
   ipcMain.handle('task:resume', (_e, taskId: string) => taskManager.resume(taskId))
   ipcMain.handle('task:remove', (_e, taskId: string) => taskManager.remove(taskId))
-
-  // ---- 成本 ----
-  ipcMain.handle('usage:aggregate', () => aggregate(loadRecords()))
-  ipcMain.handle('usage:reset', () => resetRecords())
 
   // ---- 输出 ----
   ipcMain.handle('output:open', (_e, path: string) => shell.openPath(path))

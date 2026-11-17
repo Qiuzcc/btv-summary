@@ -18,7 +18,7 @@
   },
   "build": {
     "appId": "com.btv.summary.desktop",
-    "productName": "btv-summary",
+    "productName": "B 站视频总结",
     "directories": {
       "output": "release",
       "buildResources": "build"

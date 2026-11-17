@@ -17,20 +17,17 @@ describe('LLM 调用', () => {
     vi.useFakeTimers()
   })
 
-  it('成功解析 choices 内容并回调 usage', async () => {
+  it('成功解析 choices 内容', async () => {
     const fetchImpl = vi.fn().mockResolvedValue(
       new Response(
         JSON.stringify({
-          choices: [{ message: { content: '  hello  ' } }],
-          usage: { prompt_tokens: 10, completion_tokens: 5 }
+          choices: [{ message: { content: '  hello  ' } }]
         }),
         { status: 200 }
       )
     )
-    const onUsage = vi.fn()
-    const result = await chat(baseConfig(), messages, { fetchImpl, onUsage, sleep: vi.fn() })
+    const result = await chat(baseConfig(), messages, { fetchImpl, sleep: vi.fn() })
     expect(result).toBe('hello')
-    expect(onUsage).toHaveBeenCalledWith({ model: 'deepseek-chat', prompt_tokens: 10, completion_tokens: 5 })
   })
 
   it('TR-6.2 未配置 api_key 或 base_url 立即抛错', async () => {

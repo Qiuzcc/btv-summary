@@ -2,7 +2,7 @@
  * preload 暴露给渲染层的 API 契约。
  * 主进程实现、preload 转发、渲染层消费，三处共用此类型。
  */
-import type { AppConfig, ProgressSnapshot, TaskParams, TaskRecord, UsageAggregate } from './types'
+import type { AppConfig, ProgressSnapshot, TaskParams, TaskRecord } from './types'
 
 export type TaskEvent =
   | { type: 'state'; taskId: string; task: TaskRecord }
@@ -25,6 +25,8 @@ export interface BtvApi {
     get: () => Promise<AppConfig>
     set: (key: string, value: string) => Promise<void>
     masked: () => Promise<AppConfig>
+    path: () => Promise<string>
+    openFile: () => Promise<void>
   }
   task: {
     submit: (params: TaskParams) => Promise<TaskRecord>
@@ -33,10 +35,6 @@ export interface BtvApi {
     resume: (taskId: string) => Promise<void>
     remove: (taskId: string) => Promise<void>
     onEvent: (listener: (event: TaskEvent) => void) => () => void
-  }
-  usage: {
-    aggregate: () => Promise<UsageAggregate>
-    reset: () => Promise<void>
   }
   output: {
     open: (path: string) => Promise<void>

@@ -4,14 +4,13 @@ import remarkGfm from 'remark-gfm'
 import type { TaskEvent } from '../../shared/api-contract'
 import type { AppConfig, TaskParams, TaskRecord } from '../../shared/types'
 
-type Tab = 'new' | 'tasks' | 'history' | 'settings' | 'cost'
+type Tab = 'new' | 'tasks' | 'history' | 'settings'
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'new', label: '新建任务' },
   { id: 'tasks', label: '任务列表' },
   { id: 'history', label: '历史结果' },
-  { id: 'settings', label: '设置' },
-  { id: 'cost', label: '成本统计' }
+  { id: 'settings', label: '设置' }
 ]
 
 const STATE_LABEL: Record<string, string> = {
@@ -46,7 +45,7 @@ export default function App(): JSX.Element {
   return (
     <div className="flex h-full bg-slate-50 text-slate-800">
       <nav className="flex w-44 flex-col gap-1 border-r border-slate-200 bg-white p-3">
-        <div className="px-2 py-3 text-lg font-bold text-slate-900">btv-summary</div>
+        <div className="px-2 py-3 text-lg font-bold text-slate-900">B 站视频总结</div>
         {TABS.map((t) => (
           <button
             key={t.id}
@@ -73,7 +72,6 @@ export default function App(): JSX.Element {
         {tab === 'tasks' && <TasksPage tasks={tasks} onChange={reloadTasks} />}
         {tab === 'history' && <HistoryPage />}
         {tab === 'settings' && <SettingsPage />}
-        {tab === 'cost' && <CostPage />}
       </main>
     </div>
   )
@@ -450,11 +448,13 @@ function HistoryPage(): JSX.Element {
 function SettingsPage(): JSX.Element {
   const [config, setConfig] = useState<AppConfig | null>(null)
   const [masked, setMasked] = useState<AppConfig | null>(null)
+  const [configPath, setConfigPath] = useState<string>('')
   const [saved, setSaved] = useState(false)
 
   useEffect(() => {
     void window.btv.config.get().then((c) => { setConfig(c); setMasked(c) })
     void window.btv.config.masked().then(setMasked)
+    void window.btv.config.path().then(setConfigPath)
   }, [])
 
   if (!config || !masked) return <p className="text-sm text-slate-500">加载中...</p>
@@ -473,15 +473,9 @@ function SettingsPage(): JSX.Element {
     { key: 'llm.base_url', label: 'LLM Base URL', value: config.llm.base_url },
     { key: 'llm.api_key', label: 'LLM API Key', value: masked.llm.api_key, secret: true },
     { key: 'llm.model', label: 'LLM 模型', value: config.llm.model },
-    { key: 'llm.temperature', label: 'Temperature', value: String(config.llm.temperature) },
-    { key: 'llm.max_retries', label: '最大重试次数', value: String(config.llm.max_retries) },
-    { key: 'asr.language', label: 'ASR 语言（留空自动）', value: config.asr.language },
     { key: 'cloud_asr.base_url', label: '云端 ASR Base URL', value: config.cloud_asr.base_url },
     { key: 'cloud_asr.api_key', label: '云端 ASR API Key', value: masked.cloud_asr.api_key, secret: true },
-    { key: 'cloud_asr.model', label: '云端 ASR 模型', value: config.cloud_asr.model },
-    { key: 'concurrency.videos', label: '并发视频数', value: String(config.concurrency.videos) },
-    { key: 'concurrency.llm', label: '全局在途 LLM 请求', value: String(config.concurrency.llm) },
-    { key: 'concurrency.asr', label: '并发 ASR 上传', value: String(config.concurrency.asr) }
+    { key: 'cloud_asr.model', label: '云端 ASR 模型', value: config.cloud_asr.model }
   ]
 
   return (
@@ -513,81 +507,23 @@ function SettingsPage(): JSX.Element {
           </div>
         ))}
       </div>
-    </div>
-  )
-}
-
-function CostPage(): JSX.Element {
-  const [agg, setAgg] = useState<any>(null)
-
-  const reload = useCallback(() => {
-    void window.btv.usage.aggregate().then(setAgg)
-  }, [])
-
-  useEffect(() => { reload() }, [reload])
-
-  if (!agg) return <p className="text-sm text-slate-500">加载中...</p>
-
-  return (
-    <div className="mx-auto max-w-4xl space-y-5">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-slate-900">成本统计</h1>
-        <button
-          onClick={() => { if (confirm('确认清空所有成本明细？')) void window.btv.usage.reset().then(reload) }}
-          className="rounded-md bg-red-600 px-4 py-1.5 text-sm text-white hover:bg-red-500"
-        >
-          清空明细
-        </button>
-      </div>
-      <div className="rounded-md bg-white p-4 ring-1 ring-slate-200">
-        <div className="text-sm text-slate-500">累计任务</div>
-        <div className="text-3xl font-bold text-slate-900">{agg.count}</div>
-        <div className="mt-2 text-sm text-slate-500">累计金额</div>
-        <div className="text-2xl font-bold text-slate-900">¥ {Number(agg.grandTotal).toFixed(6)}</div>
-      </div>
-
-      <div className="rounded-md bg-white p-4 ring-1 ring-slate-200">
-        <h2 className="mb-3 font-bold text-slate-900">LLM</h2>
-        <table className="w-full text-sm">
-          <thead className="text-left text-slate-500">
-            <tr><th className="pb-2">模型</th><th className="pb-2">调用</th><th className="pb-2">输入 token</th><th className="pb-2">输出 token</th><th className="pb-2">金额</th></tr>
-          </thead>
-          <tbody>
-            {Object.entries(agg.llm as Record<string, any>).map(([model, v]) => (
-              <tr key={model} className="border-t border-slate-100">
-                <td className="py-2">{model}</td><td>{v.calls}</td><td>{v.prompt_tokens}</td><td>{v.completion_tokens}</td><td>¥ {Number(v.cost).toFixed(6)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      <div className="rounded-md bg-white p-4 ring-1 ring-slate-200">
-        <h2 className="mb-3 font-bold text-slate-900">ASR</h2>
-        <table className="w-full text-sm">
-          <thead className="text-left text-slate-500">
-            <tr><th className="pb-2">模型</th><th className="pb-2">秒数</th><th className="pb-2">金额</th></tr>
-          </thead>
-          <tbody>
-            {Object.entries(agg.asr as Record<string, any>).map(([model, v]) => (
-              <tr key={model} className="border-t border-slate-100">
-                <td className="py-2">{model}</td><td>{Number(v.seconds).toFixed(1)}</td><td>¥ {Number(v.cost).toFixed(6)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {agg.unknown.length > 0 && (
-        <div className="rounded-md bg-amber-50 p-4 text-sm text-amber-800">
-          <div className="font-medium">未配置单价的模型（金额计 0）</div>
-          <ul className="mt-1 list-inside list-disc">
-            {agg.unknown.map((u: any, i: number) => (
-              <li key={i}>{u.kind}: {u.model}</li>
-            ))}
-          </ul>
+      <div className="rounded-md bg-slate-100 p-4 text-sm text-slate-600">
+        <div className="font-medium text-slate-800">高级配置</div>
+        <p className="mt-1">
+          Temperature、最大重试次数、ASR 语言、并发视频数、全局在途 LLM 请求、并发 ASR 上传
+          等参数请直接编辑配置文件。
+        </p>
+        <div className="mt-2 flex items-center gap-2">
+          <code className="flex-1 truncate rounded bg-white px-2 py-1 font-mono text-xs text-slate-700">{configPath}</code>
+          <button
+            onClick={() => void window.btv.config.openFile()}
+            className="shrink-0 rounded-md bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-700"
+          >
+            打开配置文件
+          </button>
         </div>
-      )}
+      </div>
     </div>
   )
 }
+

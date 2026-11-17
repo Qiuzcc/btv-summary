@@ -1,15 +1,11 @@
 /**
  * 云端 ASR：multipart/form-data 上传音频，超时 900s。
- * 对齐 archive/btv/asr.py：segments 解析、仅 text 降级单段、空文本报错、按末段 end 回调秒数。
+ * 对齐 archive/btv/asr.py：segments 解析、仅 text 降级单段、空文本报错。
  */
 import { readFileSync } from 'node:fs'
 import { extname } from 'node:path'
 import type { AppConfig } from './config'
 import type { Segment } from '../../shared/types'
-
-export interface AsrUsageCallback {
-  (model: string, seconds: number): void
-}
 
 export interface AsrOptions {
   fetchImpl?: typeof fetch
@@ -91,11 +87,10 @@ export async function transcribeCloud(
   return segments
 }
 
-/** 对齐 asr.transcribe：读取配置、调用云端、按末段 end 回调秒数 */
+/** 对齐 asr.transcribe：读取配置、调用云端 */
 export async function transcribe(
   path: string,
   config: AppConfig,
-  onUsage?: AsrUsageCallback,
   options: AsrOptions = {}
 ): Promise<Segment[]> {
   const language = config.asr.language || ''
@@ -109,8 +104,5 @@ export async function transcribe(
     language,
     options
   )
-  if (onUsage && segments.length > 0) {
-    onUsage(model, Number(segments[segments.length - 1].end))
-  }
   return segments
 }

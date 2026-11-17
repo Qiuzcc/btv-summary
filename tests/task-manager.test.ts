@@ -15,8 +15,7 @@ vi.mock('../src/main/core/pipeline', () => ({
     return {
       transcript: { bvid: 'BV1TEST12345', title: '测试', owner: '', duration: 10, source: 'asr', segments: [] },
       markdown: '# 测试',
-      outputPath: '/tmp/out.md',
-      usageRecord: { ts: 'x', bvid: 'BV1TEST12345', title: '测试', llm: { items: [], unknown: [], cost: 0 }, asr: { items: [], unknown: [], cost: 0 }, total: 0 }
+      outputPath: '/tmp/out.md'
     }
   })
 }))
@@ -170,15 +169,13 @@ describe('TaskManager', () => {
     await new Promise((r) => setTimeout(r, 50))
   })
 
-  it('删除任务不影响输出、缓存和用量文件', () => {
+  it('删除任务不影响输出和缓存文件', () => {
     const outputPath = join(dir, 'output', 'summary.md')
     const transcriptPath = join(dir, 'cache', 'BV1TEST12345', 'transcript.json')
-    const usagePath = join(dir, 'cache', 'usage.jsonl')
     mkdirSync(join(dir, 'output'), { recursive: true })
     mkdirSync(join(dir, 'cache', 'BV1TEST12345'), { recursive: true })
     writeFileSync(outputPath, '# summary')
     writeFileSync(transcriptPath, '{"segments":[]}')
-    writeFileSync(usagePath, '{"total":1}\n')
     writeFileSync(
       join(dir, 'tasks.json'),
       JSON.stringify([
@@ -202,6 +199,5 @@ describe('TaskManager', () => {
 
     expect(readFileSync(outputPath, 'utf8')).toBe('# summary')
     expect(readFileSync(transcriptPath, 'utf8')).toBe('{"segments":[]}')
-    expect(readFileSync(usagePath, 'utf8')).toBe('{"total":1}\n')
   })
 })

@@ -1,16 +1,10 @@
 /**
- * LLM 调用：OpenAI 兼容 /chat/completions，指数退避重试，用量回调。
+ * LLM 调用：OpenAI 兼容 /chat/completions，指数退避重试。
  * 逐函数对齐 archive/btv/llm.py；fetch 可注入以便单测。
  */
 import type { AppConfig } from './config'
 
 const RETRYABLE_STATUS = new Set([408, 409, 429, 500, 502, 503, 504])
-
-export interface LlmUsage {
-  model: string
-  prompt_tokens: number
-  completion_tokens: number
-}
 
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant'
@@ -20,7 +14,6 @@ export interface ChatMessage {
 export interface ChatOptions {
   temperature?: number
   timeout?: number
-  onUsage?: (usage: LlmUsage) => void
   /** 注入 fetch，便于测试 */
   fetchImpl?: typeof fetch
   /** 注入 sleep，便于测试用 fake timers */
@@ -112,13 +105,6 @@ export async function chat(
         content = String(data['choices'][0]['message']['content']).trim()
       } catch {
         throw new Error(`LLM 返回格式异常：${JSON.stringify(data).slice(0, 300)}`)
-      }
-      if (options.onUsage && data && typeof data.usage === 'object' && data.usage !== null) {
-        options.onUsage({
-          model: payload.model,
-          prompt_tokens: Number(data.usage.prompt_tokens ?? 0),
-          completion_tokens: Number(data.usage.completion_tokens ?? 0)
-        })
       }
       return content
     }

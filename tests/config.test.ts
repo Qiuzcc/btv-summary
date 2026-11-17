@@ -19,11 +19,11 @@ describe('config 深度合并与点路径', () => {
   it('deepMerge 保留默认值并覆盖嵌套字段', () => {
     const merged = deepMerge(structuredClone(DEFAULT_CONFIG), {
       llm: { model: 'Qwen/test' },
-      pricing: { asr: { 'm/a': 0.001 } }
+      concurrency: { videos: 4 }
     }) as AppConfig
     expect(merged.llm.model).toBe('Qwen/test')
     expect(merged.llm.base_url).toBe(DEFAULT_CONFIG.llm.base_url)
-    expect(merged.pricing.asr['m/a']).toBe(0.001)
+    expect(merged.concurrency.videos).toBe(4)
   })
 
   it('setValue 支持 JSON 强转与裸字符串回退', () => {

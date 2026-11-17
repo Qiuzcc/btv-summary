@@ -69,7 +69,7 @@ describe('ASR 模块', () => {
     ).rejects.toThrow(/云端转写失败 400：bad request detail/)
   })
 
-  it('transcribe 按末段 end 回调 ASR 秒数', async () => {
+  it('transcribe 读取配置并返回分段', async () => {
     const fetchImpl = vi.fn().mockResolvedValue(
       new Response(
         JSON.stringify({ segments: [{ start: 0, end: 12.5, text: 'x' }] }),
@@ -80,8 +80,8 @@ describe('ASR 模块', () => {
     cfg.cloud_asr.base_url = 'https://x'
     cfg.cloud_asr.api_key = 'k'
     cfg.cloud_asr.model = 'XingChenAGI/XingChenASR-Diarize-V3.0'
-    const onUsage = vi.fn()
-    await transcribe(audioPath, cfg, onUsage, { fetchImpl })
-    expect(onUsage).toHaveBeenCalledWith('XingChenAGI/XingChenASR-Diarize-V3.0', 12.5)
+    const segs = await transcribe(audioPath, cfg, { fetchImpl })
+    expect(segs).toHaveLength(1)
+    expect(segs[0]).toEqual({ start: 0, end: 12.5, text: 'x' })
   })
 })

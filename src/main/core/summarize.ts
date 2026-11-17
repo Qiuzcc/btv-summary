@@ -3,7 +3,7 @@
  * 提示词常量与 archive/btv/summarize.py 逐字一致；流程、降级、后处理对齐。
  */
 import type { AppConfig } from './config'
-import { chat, type ChatMessage, type LlmUsage } from './llm'
+import { chat, type ChatMessage } from './llm'
 import { chunkSegments, formatTs } from '../../shared/transcript'
 import type { Segment, Transcript } from '../../shared/types'
 
@@ -75,7 +75,6 @@ export interface SummarizeOptions {
   detail?: string
   chunkSeconds?: number | null
   progress?: (message: string) => void
-  onUsage?: (usage: LlmUsage) => void
   /** 注入 LLM 调用，便于单测；默认使用 llm.chat */
   llmChat?: typeof chat
 }
@@ -87,8 +86,7 @@ async function mapChunk(
   total: number,
   index: number,
   chunk: Segment[],
-  llmChat: typeof chat,
-  onUsage?: (usage: LlmUsage) => void
+  llmChat: typeof chat
 ): Promise<string> {
   const body = chunk
     .map((segment) => `[${formatTs(segment.start)}] ${segment.text}`)
@@ -109,8 +107,7 @@ async function mapChunk(
           .replace('{max_bullets}', String(settings.max_bullets))
           .replace('{body}', body)
       }
-    ],
-    { onUsage }
+    ]
   )
 }
 
@@ -141,7 +138,7 @@ export async function summarize(
     chunks.map(async (chunk, i) => {
       const index = i + 1
       try {
-        notes[i] = await mapChunk(config, settings, transcript.title, total, index, chunk, llmChat, options.onUsage)
+        notes[i] = await mapChunk(config, settings, transcript.title, total, index, chunk, llmChat)
       } catch (error) {
         progress(`第 ${index}/${total} 段总结失败，用原文降级：${(error as Error).message}`)
         notes[i] = chunk
@@ -171,11 +168,11 @@ export async function summarize(
       { role: 'system', content: REDUCE_SYSTEM },
       { role: 'user', content: reduceUser }
     ],
-    { temperature: 0.2, timeout: 300, onUsage: options.onUsage }
+    { temperature: 0.2, timeout: 300 }
   )
 
   markdown = stripCodeFence(markdown)
-  markdown = await enforceKeyPointsLimit(markdown, config, progress, options.onUsage, llmChat)
+  markdown = await enforceKeyPointsLimit(markdown, config, progress, llmChat)
   if (!markdown.trimStart().startsWith('#')) {
     markdown = `# ${transcript.title}\n\n${markdown}`
   }
@@ -206,7 +203,6 @@ async function enforceKeyPointsLimit(
   markdown: string,
   config: AppConfig,
   progress: (message: string) => void,
-  onUsage: ((usage: LlmUsage) => void) | undefined,
   llmChat: typeof chat
 ): Promise<string> {
   const match = KEY_POINTS_SECTION_RE.exec(markdown)
@@ -231,7 +227,7 @@ async function enforceKeyPointsLimit(
             .replace('{body}', body)
         }
       ],
-      { temperature: 0.2, onUsage }
+      { temperature: 0.2 }
     )
   } catch (error) {
     progress(`核心要点压缩失败，保留原文：${(error as Error).message}`)

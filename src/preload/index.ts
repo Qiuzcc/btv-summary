@@ -11,7 +11,9 @@ const api: BtvApi = {
   config: {
     get: () => ipcRenderer.invoke('config:get'),
     set: (key, value) => ipcRenderer.invoke('config:set', key, value),
-    masked: () => ipcRenderer.invoke('config:masked')
+    masked: () => ipcRenderer.invoke('config:masked'),
+    path: () => ipcRenderer.invoke('config:path'),
+    openFile: () => ipcRenderer.invoke('config:openFile')
   },
   task: {
     submit: (params) => ipcRenderer.invoke('task:submit', params),
@@ -24,10 +26,6 @@ const api: BtvApi = {
       ipcRenderer.on('task:event', handler)
       return () => ipcRenderer.removeListener('task:event', handler)
     }
-  },
-  usage: {
-    aggregate: () => ipcRenderer.invoke('usage:aggregate'),
-    reset: () => ipcRenderer.invoke('usage:reset')
   },
   output: {
     open: (path) => ipcRenderer.invoke('output:open', path),
