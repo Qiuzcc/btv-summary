@@ -150,7 +150,7 @@ describe('TR-9.2 summarize 各路径', () => {
       { start: 0, end: 10, text: '第一段' },
       { start: 10, end: 20, text: '第二段' }
     ])
-    const md = await summarize(transcript, config, { llmChat })
+    const md = await summarize(transcript, config, { llmChat, chunkSeconds: 5 })
     expect(md).toContain('[00:00] 第一段')
   })
 
@@ -178,11 +178,12 @@ describe('TR-9.2 summarize 各路径', () => {
   it('压缩无效保留原文', async () => {
     const longBody = '1. ' + '啊'.repeat(600)
     const transcript = makeTranscript([{ start: 0, end: 10, text: 'x' }])
-    // map → reduce(长文) → compress(更长，无效)
-    const llmChat = vi.fn()
-      .mockResolvedValueOnce('map note')
-      .mockResolvedValueOnce(`# 测试视频\n\n## TL;DR\nx\n\n## 核心要点\n${longBody}\n\n## 值得追问\n- q`)
-      .mockResolvedValueOnce(`1. ${'啊'.repeat(800)}`)
+    // 单次总结返回超限正文 → 压缩返回更长内容（无效）
+    const llmChat = vi.fn(async (_config, messages) => {
+      const user = messages[messages.length - 1].content as string
+      if (user.includes('压缩改写')) return `1. ${'啊'.repeat(800)}`
+      return `# 测试视频\n\n## TL;DR\nx\n\n## 核心要点\n${longBody}\n\n## 值得追问\n- q`
+    })
     const md = await summarize(transcript, config, { llmChat })
     expect(md).toContain('啊')
   })
@@ -198,5 +199,62 @@ describe('TR-9.2 summarize 各路径', () => {
     const llmChat = vi.fn()
     const transcript = makeTranscript([])
     await expect(summarize(transcript, config, { llmChat })).rejects.toThrow(/转写内容为空/)
+  })
+})
+
+describe('TR-9.3 单次总结与超限回退', () => {
+  const config = structuredClone(DEFAULT_CONFIG) as AppConfig
+  config.llm.api_key = 'sk-x'
+  config.llm.base_url = 'https://x'
+
+  type Msg = { role: string; content: string }
+
+  it('全文未超上限时只调用一次 LLM', async () => {
+    const llmChat = vi.fn(async (_cfg: AppConfig, _messages: Msg[]) => '# 测试视频\n\n## TL;DR\n摘要')
+    const transcript = makeTranscript([
+      { start: 0, end: 10, text: '第一段' },
+      { start: 10, end: 20, text: '第二段' }
+    ])
+    await summarize(transcript, config, { llmChat })
+    expect(llmChat).toHaveBeenCalledTimes(1)
+    const user = llmChat.mock.calls[0][1][1].content
+    expect(user).toContain('完整转写')
+    expect(user).toContain('[00:00] 第一段')
+    expect(user).not.toContain('{body}')
+    expect(user).not.toContain('{url}')
+  })
+
+  it('全文超出上限时退回 Map-Reduce', async () => {
+    const tiny = structuredClone(config) as AppConfig
+    tiny.llm.max_input_chars = 10
+    const llmChat = vi.fn(async (_cfg: AppConfig, messages: Msg[]) => {
+      const user = messages[messages.length - 1].content
+      return user.includes('请提炼这一段')
+        ? '- [00:00] 要点'
+        : '# 测试视频\n\n## TL;DR\n摘要'
+    })
+    const transcript = makeTranscript([
+      { start: 0, end: 10, text: '第一段' },
+      { start: 10, end: 20, text: '第二段' }
+    ])
+    await summarize(transcript, tiny, { llmChat })
+    expect(llmChat.mock.calls.length).toBeGreaterThan(1)
+    const first = llmChat.mock.calls[0][1][1].content
+    expect(first).toContain('请提炼这一段')
+  })
+
+  it('显式指定 chunkSeconds 时保持分块', async () => {
+    const llmChat = vi.fn(async (_cfg: AppConfig, messages: Msg[]) => {
+      const user = messages[messages.length - 1].content
+      return user.includes('请提炼这一段')
+        ? '- [00:00] 要点'
+        : '# 测试视频\n\n## TL;DR\n摘要'
+    })
+    const transcript = makeTranscript([
+      { start: 0, end: 10, text: '第一段' },
+      { start: 10, end: 20, text: '第二段' }
+    ])
+    await summarize(transcript, config, { llmChat, chunkSeconds: 5 })
+    expect(llmChat.mock.calls.length).toBe(3)
   })
 })

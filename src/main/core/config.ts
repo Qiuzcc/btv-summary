@@ -24,6 +24,7 @@ export const DEFAULT_CONFIG: AppConfig = {
     model: 'deepseek-chat',
     temperature: 0.3,
     max_chars: 6000,
+    max_input_chars: 60000,
     max_retries: 3
   },
   asr: { language: '' },

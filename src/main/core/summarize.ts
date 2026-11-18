@@ -36,16 +36,18 @@ export const REDUCE_SYSTEM =
   '你是资深内容编辑，负责把分段笔记整合成一篇可读的视频摘要。' +
   '只使用笔记中的信息，不要编造，不要输出与笔记无关的评价。'
 
-export const REDUCE_USER = `视频信息：
+export const SINGLE_PASS_SYSTEM =
+  '你是资深内容编辑，负责把视频转写整理成一篇可读的视频摘要。' +
+  '只使用转写中的信息，不要编造，不要输出与转写无关的评价。'
+
+const VIDEO_INFO = `视频信息：
 - 标题：{title}
 - UP 主：{owner}
 - 时长：{duration}
 - 链接：{url}
+`
 
-下面是按时间顺序整理的分段要点：
-{notes}
-
-请输出一篇中文 Markdown 笔记，严格使用以下结构，不要用代码块包裹：
+const NOTE_STRUCTURE = `请输出一篇中文 Markdown 笔记，严格使用以下结构，不要用代码块包裹：
 
 # {title}
 
@@ -60,6 +62,18 @@ export const REDUCE_USER = `视频信息：
 ## 值得追问
 - 2 到 3 个视频没有回答、但值得继续查的问题。
 `
+
+export const REDUCE_USER = `${VIDEO_INFO}
+下面是按时间顺序整理的分段要点：
+{notes}
+
+${NOTE_STRUCTURE}`
+
+export const SINGLE_PASS_USER = `${VIDEO_INFO}
+下面是视频的完整转写（带时间戳）：
+{body}
+
+${NOTE_STRUCTURE}`
 
 export const COMPRESS_KEY_POINTS_USER = `下面是视频笔记的「核心要点」章节，当前约 {current} 字，超过 {limit} 字的上限。
 请压缩改写，使全章总字数不超过 {limit} 字，要求：
@@ -79,6 +93,28 @@ export interface SummarizeOptions {
   llmChat?: typeof chat
 }
 
+/** 带时间戳的转写正文，Map 与单次总结共用 */
+function formatBody(segments: Segment[]): string {
+  return segments.map((segment) => `[${formatTs(segment.start)}] ${segment.text}`).join('\n')
+}
+
+/** 填充视频信息与笔记结构；payload 用函数替换，避免正文中的 $ 符号被当作替换模式 */
+function fillNoteTemplate(
+  template: string,
+  transcript: Transcript,
+  url: string,
+  key: '{notes}' | '{body}',
+  payload: string
+): string {
+  return template
+    .replaceAll('{title}', transcript.title)
+    .replaceAll('{owner}', transcript.owner || '未知')
+    .replaceAll('{duration}', formatTs(transcript.duration))
+    .replaceAll('{url}', url)
+    .replace(key, () => payload)
+    .replaceAll('{key_points_max_chars}', String(KEY_POINTS_MAX_CHARS))
+}
+
 async function mapChunk(
   config: AppConfig,
   settings: { chunk_seconds: number; min_bullets: number; max_bullets: number },
@@ -88,9 +124,7 @@ async function mapChunk(
   chunk: Segment[],
   llmChat: typeof chat
 ): Promise<string> {
-  const body = chunk
-    .map((segment) => `[${formatTs(segment.start)}] ${segment.text}`)
-    .join('\n')
+  const body = formatBody(chunk)
   return llmChat(
     config,
     [
@@ -105,7 +139,7 @@ async function mapChunk(
           .replace('{end}', formatTs(chunk[chunk.length - 1].end))
           .replace('{min_bullets}', String(settings.min_bullets))
           .replace('{max_bullets}', String(settings.max_bullets))
-          .replace('{body}', body)
+          .replace('{body}', () => body)
       }
     ]
   )
@@ -125,51 +159,65 @@ export async function summarize(
   const settings = DETAILS[detail] ?? DETAILS.normal
   const targetSeconds = options.chunkSeconds ?? settings.chunk_seconds
   const maxChars = Math.trunc(config.llm.max_chars || 6000)
-  const chunks = chunkSegments(transcript.segments, targetSeconds, maxChars)
+  const maxInputChars = Math.trunc(config.llm.max_input_chars || 0)
   const url = `https://www.bilibili.com/video/${transcript.bvid}`
-  const total = chunks.length
   const llmChat = options.llmChat ?? chat
+  const body = formatBody(transcript.segments)
 
-  progress(`并发总结 ${total} 段...`)
-  const notes: string[] = new Array(total).fill('')
+  let markdown: string
+  if (!options.chunkSeconds && maxInputChars > 0 && body.length <= maxInputChars) {
+    // 全文放得进模型上下文：单次总结，避免分块笔记二次压缩丢细节
+    progress(`全文 ${body.length} 字，单次总结`)
+    markdown = await llmChat(
+      config,
+      [
+        { role: 'system', content: SINGLE_PASS_SYSTEM },
+        {
+          role: 'user',
+          content: fillNoteTemplate(SINGLE_PASS_USER, transcript, url, '{body}', body)
+        }
+      ],
+      { temperature: 0.2, timeout: 600 }
+    )
+  } else {
+    const chunks = chunkSegments(transcript.segments, targetSeconds, maxChars)
+    const total = chunks.length
+    progress(`并发总结 ${total} 段...`)
+    const notes: string[] = new Array(total).fill('')
 
-  // 并发 map；单块失败用带时间戳原文降级
-  await Promise.all(
-    chunks.map(async (chunk, i) => {
-      const index = i + 1
-      try {
-        notes[i] = await mapChunk(config, settings, transcript.title, total, index, chunk, llmChat)
-      } catch (error) {
-        progress(`第 ${index}/${total} 段总结失败，用原文降级：${(error as Error).message}`)
-        notes[i] = chunk
-          .map((segment) => `- [${formatTs(segment.start)}] ${segment.text}`)
-          .join('\n')
-      }
-      progress(`第 ${index}/${total} 段完成`)
-    })
-  )
+    // 并发 map；单块失败用带时间戳原文降级
+    await Promise.all(
+      chunks.map(async (chunk, i) => {
+        const index = i + 1
+        try {
+          notes[i] = await mapChunk(config, settings, transcript.title, total, index, chunk, llmChat)
+        } catch (error) {
+          progress(`第 ${index}/${total} 段总结失败，用原文降级：${(error as Error).message}`)
+          notes[i] = chunk
+            .map((segment) => `- [${formatTs(segment.start)}] ${segment.text}`)
+            .join('\n')
+        }
+        progress(`第 ${index}/${total} 段完成`)
+      })
+    )
 
-  const notesText = notes
-    .map((note, index) => `#### 第 ${index + 1} 段\n${note}`)
-    .join('\n\n')
+    const notesText = notes
+      .map((note, index) => `#### 第 ${index + 1} 段\n${note}`)
+      .join('\n\n')
 
-  progress('合并分段要点并生成最终笔记')
-  const reduceUser = REDUCE_USER
-    .replace('{title}', transcript.title)
-    .replace('{owner}', transcript.owner || '未知')
-    .replace('{duration}', formatTs(transcript.duration))
-    .replace('{url}', url)
-    .replace('{notes}', notesText)
-    .replace('{key_points_max_chars}', String(KEY_POINTS_MAX_CHARS))
-
-  let markdown = await llmChat(
-    config,
-    [
-      { role: 'system', content: REDUCE_SYSTEM },
-      { role: 'user', content: reduceUser }
-    ],
-    { temperature: 0.2, timeout: 300 }
-  )
+    progress('合并分段要点并生成最终笔记')
+    markdown = await llmChat(
+      config,
+      [
+        { role: 'system', content: REDUCE_SYSTEM },
+        {
+          role: 'user',
+          content: fillNoteTemplate(REDUCE_USER, transcript, url, '{notes}', notesText)
+        }
+      ],
+      { temperature: 0.2, timeout: 300 }
+    )
+  }
 
   markdown = stripCodeFence(markdown)
   markdown = await enforceKeyPointsLimit(markdown, config, progress, llmChat)

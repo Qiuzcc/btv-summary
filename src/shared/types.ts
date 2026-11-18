@@ -79,6 +79,8 @@ export interface AppConfig {
     model: string
     temperature: number
     max_chars: number
+    /** 单次总结允许的最大输入字符数，超出后退回分块 Map-Reduce */
+    max_input_chars: number
     max_retries: number
   }
   asr: { language: string }
