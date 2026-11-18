@@ -11,11 +11,32 @@ B 站长视频要点提炼桌面版：输入 BV 号，自动拉取字幕（无�
 - [Windows（x64 安装程序）](https://github.com/Qiuzcc/btv-summary/releases/latest/download/btv-summary-win-x64-setup.exe)
 
 历史版本见 [Releases 页面](https://github.com/Qiuzcc/btv-summary/releases)。
-macOS 首次打开如提示"未验证开发者"，右键应用图标 → 打开即可。
+
+### macOS 首次打开提示
+
+安装包未使用 Apple 开发者证书签名与公证（需付费账号），首次打开会被 Gatekeeper 拦截：
+
+- 提示"Apple 无法检查其是否包含恶意软件"：打开 **系统设置 → 隐私与安全性**，在下方点"仍要打开"。
+- macOS 14 及更早版本：右键应用图标 → 打开。
+- 若提示"已损坏"：移除隔离属性后重试。
+
+```bash
+xattr -dr com.apple.quarantine "/Applications/B 站视频总结.app"
+```
 
 ## 首次使用
 【必填项】
 首次启动后在设置中填写 LLM / ASR 接口与密钥。
+
+推荐统一使用[硅基流动](https://cloud.siliconflow.cn)（也可以选择使用其它平台），一个账号、一个 Key 即可同时满足转写与总结：
+
+1. 注册后到 [API 密钥](https://cloud.siliconflow.cn/account/ak) 页面创建以 `sk-` 开头的 Key。
+2. **LLM**：`Base URL` 填 `https://api.siliconflow.cn/v1`，`模型` 填 `zai-org/GLM-5.3-Flash`（速度快、中文效果好、成本低）。
+3. **云端 ASR**：`Base URL` 填 `https://api.siliconflow.cn/v1`，`模型` 填 `XingChenAGI/XingChenASR-Diarize-V3.0`（免费）。
+4. 两处的 `API Key` 填同一个硅基流动 Key。
+
+> 推荐选择能返回分段时间戳的 ASR 模型，这样长视频能按时间段分块总结。换成 `FunAudioLLM/SenseVoiceSmall`、`Qwen/Qwen3-ASR-1.7B` 等只返回整段文本的模型也能正常生成总结，只是退化为按字数切块。
+> 也可替换为任意兼容 OpenAI 接口的服务：LLM 需支持 `/chat/completions`，云端 ASR 需支持 `/audio/transcriptions` 且 `Base URL` 以 `/v1` 结尾。
 
 【可选项】
 - **SESSDATA**：支持粘贴完整 Cookie，会自动提取。
