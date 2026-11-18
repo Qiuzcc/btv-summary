@@ -41,6 +41,8 @@ jobs:
           chmod +x resources/yt-dlp resources/ffmpeg
 
       - run: pnpm pack:mac
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       # 固定文件名，使 releases/latest/download/<文件名> 永远指向最新版
       - name: 重命名为固定文件名
@@ -82,6 +84,8 @@ jobs:
             https://github.com/eugeneware/ffmpeg-static/releases/download/b6.0/ffmpeg-win32-x64
 
       - run: pnpm pack:win
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 重命名为固定文件名
         shell: bash
