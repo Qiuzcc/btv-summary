@@ -45,12 +45,18 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       # 固定文件名，使 releases/latest/download/<文件名> 永远指向最新版
+      # electron-builder 只给 arm64 产物加 -arm64 后缀，x64 产物无架构后缀
       - name: 重命名为固定文件名
         run: |
           set -euo pipefail
           cd release
-          for f in *arm64.dmg; do mv "$f" btv-summary-mac-arm64.dmg; done
-          for f in *x64.dmg; do mv "$f" btv-summary-mac-x64.dmg; done
+          for f in *.dmg; do
+            case "$f" in
+              *arm64*) mv "$f" btv-summary-mac-arm64.dmg ;;
+              *) mv "$f" btv-summary-mac-x64.dmg ;;
+            esac
+          done
+          ls -l btv-summary-*.dmg
 
       - uses: softprops/action-gh-release@v2
         with:
