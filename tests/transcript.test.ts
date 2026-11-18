@@ -5,35 +5,15 @@ import {
   formatTs,
   parseTranscript,
   safeDirname,
-  serializeTranscript,
-  srtTime,
-  toSrt
+  serializeTranscript
 } from '../src/shared/transcript'
 
-describe('时间戳格式（对齐 Python format_ts / _srt_time）', () => {
+describe('时间戳格式（对齐 Python format_ts）', () => {
   it('formatTs 不足 1 小时省略小时位', () => {
     expect(formatTs(0)).toBe('00:00')
     expect(formatTs(75.9)).toBe('01:15')
     expect(formatTs(3661)).toBe('01:01:01')
     expect(formatTs(-5)).toBe('00:00')
-  })
-
-  it('srtTime 固定 HH:MM:SS,mmm 毫秒三位', () => {
-    expect(srtTime(0)).toBe('00:00:00,000')
-    expect(srtTime(3661.1234)).toBe('01:01:01,123')
-    expect(srtTime(1.005)).toBe('00:00:01,005')
-  })
-})
-
-describe('SRT 序列化（对齐 Transcript.to_srt）', () => {
-  it('块编号、时间轴与文本布局逐字节一致', () => {
-    const segments: Segment[] = [
-      { start: 0, end: 1.5, text: '你好' },
-      { start: 1.5, end: 3, text: '世界' }
-    ]
-    expect(toSrt(segments)).toBe(
-      '1\n00:00:00,000 --> 00:00:01,500\n你好\n\n2\n00:00:01,500 --> 00:00:03,000\n世界\n'
-    )
   })
 })
 

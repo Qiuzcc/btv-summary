@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import {
   COMPRESS_KEY_POINTS_USER,
@@ -15,52 +13,7 @@ import {
 import { DEFAULT_CONFIG, type AppConfig } from '../src/main/core/config'
 import type { Transcript } from '../src/shared/types'
 
-const PY_FILE = join(import.meta.dirname, '../archive/btv/summarize.py')
-const pySource = readFileSync(PY_FILE, 'utf8')
-
-function extractPythonConstant(name: string): string {
-  const startRe = new RegExp(`${name}\\s*=\\s*`)
-  const startMatch = pySource.match(startRe)
-  if (!startMatch || startMatch.index === undefined) {
-    throw new Error(`未在 summarize.py 找到常量 ${name}`)
-  }
-  let pos = startMatch.index + startMatch[0].length
-  const parts: string[] = []
-  // 反复匹配 Python 字符串（双引号或三引号），若紧随 + 则继续拼接
-  while (true) {
-    while (pos < pySource.length && /\s/.test(pySource[pos])) pos++
-    if (pySource[pos] === '(') { pos++; continue }
-    const open = pos
-    const isTriple = pySource.startsWith('"""', open)
-    if (pySource[open] !== '"') break
-    let close: number
-    if (isTriple) {
-      close = pySource.indexOf('"""', open + 3)
-      if (close === -1) break
-      parts.push(pySource.slice(open + 3, close))
-      pos = close + 3
-    } else {
-      // 单引号字符串：找下一个未转义的 "
-      let i = open + 1
-      while (i < pySource.length) {
-        if (pySource[i] === '\\') { i += 2; continue }
-        if (pySource[i] === '"') break
-        i++
-      }
-      if (i >= pySource.length) break
-      parts.push(pySource.slice(open + 1, i))
-      pos = i + 1
-    }
-    while (pos < pySource.length && /\s/.test(pySource[pos])) pos++
-    if (pySource[pos] === '+') { pos++; continue }
-    if (pySource[pos] === '"') continue // Python 隐式字符串拼接
-    break
-  }
-  if (parts.length === 0) throw new Error(`常量 ${name} 无可拼接的字符串`)
-  return parts.join('')
-}
-
-describe('TR-9.1 提示词常量与 Python 逐字一致', () => {
+describe('TR-9.1 提示词常量', () => {
   it('DETAILS 三档参数一致', () => {
     expect(DETAILS.brief).toEqual({ chunk_seconds: 720, min_bullets: 2, max_bullets: 4 })
     expect(DETAILS.normal).toEqual({ chunk_seconds: 480, min_bullets: 3, max_bullets: 6 })
@@ -68,20 +21,62 @@ describe('TR-9.1 提示词常量与 Python 逐字一致', () => {
     expect(KEY_POINTS_MAX_CHARS).toBe(500)
   })
 
-  it('MAP_SYSTEM 逐字一致', () => {
-    expect(MAP_SYSTEM).toBe(extractPythonConstant('MAP_SYSTEM'))
+  it('MAP_SYSTEM 内容稳定', () => {
+    expect(MAP_SYSTEM).toBe(
+      '你是严谨的视频内容提炼助手，只依据给定的转写文本工作，不补充转写中没有出现的信息。'
+    )
   })
-  it('MAP_USER 逐字一致', () => {
-    expect(MAP_USER).toBe(extractPythonConstant('MAP_USER'))
+  it('MAP_USER 内容稳定', () => {
+    expect(MAP_USER).toBe(`以下是视频《{title}》第 {index}/{total} 段的转写，时间范围 {start} 到 {end}。
+请提炼这一段的要点，用 {min_bullets} 到 {max_bullets} 条 Markdown 列表输出。
+每条以 [mm:ss] 开头，对应该要点出现的时间；只写要点，不要开场白，不要概括本段之外的内容。
+
+转写：
+{body}
+`)
   })
-  it('REDUCE_SYSTEM 逐字一致', () => {
-    expect(REDUCE_SYSTEM).toBe(extractPythonConstant('REDUCE_SYSTEM'))
+  it('REDUCE_SYSTEM 内容稳定', () => {
+    expect(REDUCE_SYSTEM).toBe(
+      '你是资深内容编辑，负责把分段笔记整合成一篇可读的视频摘要。' +
+        '只使用笔记中的信息，不要编造，不要输出与笔记无关的评价。'
+    )
   })
-  it('REDUCE_USER 逐字一致', () => {
-    expect(REDUCE_USER).toBe(extractPythonConstant('REDUCE_USER'))
+  it('REDUCE_USER 内容稳定', () => {
+    expect(REDUCE_USER).toBe(`视频信息：
+- 标题：{title}
+- UP 主：{owner}
+- 时长：{duration}
+- 链接：{url}
+
+下面是按时间顺序整理的分段要点：
+{notes}
+
+请输出一篇中文 Markdown 笔记，严格使用以下结构，不要用代码块包裹：
+
+# {title}
+
+> 来源：{url} · 时长 {duration} · UP 主 {owner}
+
+## TL;DR
+用 2 到 3 句话概括视频的核心结论。
+
+## 核心要点
+固定 5 条，按重要性排序，每条只讲一个要点；整个章节总字数严格控制在 {key_points_max_chars} 字以内（平均每条不超过 100 字），用短句直给结论，删掉修饰语、重复举例和括号补充。
+
+## 值得追问
+- 2 到 3 个视频没有回答、但值得继续查的问题。
+`)
   })
-  it('COMPRESS_KEY_POINTS_USER 逐字一致', () => {
-    expect(COMPRESS_KEY_POINTS_USER).toBe(extractPythonConstant('COMPRESS_KEY_POINTS_USER'))
+  it('COMPRESS_KEY_POINTS_USER 内容稳定', () => {
+    expect(COMPRESS_KEY_POINTS_USER).toBe(`下面是视频笔记的「核心要点」章节，当前约 {current} 字，超过 {limit} 字的上限。
+请压缩改写，使全章总字数不超过 {limit} 字，要求：
+- 保持 5 条编号列表，按重要性排序，每条只保留一个核心结论；
+- 保留关键数字、专有名词和结论，删去修饰语、重复举例和括号补充；
+- 只输出压缩后的 5 条列表，不要标题、开场白或其他章节，不要编造信息。
+
+原文：
+{body}
+`)
   })
 })
 

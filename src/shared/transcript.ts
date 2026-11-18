@@ -1,11 +1,10 @@
 /**
- * 转写领域纯函数：时间戳、SRT、分块、目录名安全化、JSON 序列化。
+ * 转写领域纯函数：时间戳、分块、目录名安全化、JSON 序列化。
  * 逐函数对齐 archive/btv/models.py 与 archive/btv/summarize.py、cli.py。
  */
 import type { Segment, Transcript, TranscriptDTO } from './types'
 
 const pad2 = (value: number): string => String(value).padStart(2, '0')
-const pad3 = (value: number): string => String(value).padStart(3, '0')
 
 /** 对齐 summarize.format_ts：小时位仅在 >0 时出现 */
 export function formatTs(seconds: number): string {
@@ -16,28 +15,6 @@ export function formatTs(seconds: number): string {
   const secs = remainder % 60
   if (hours) return `${pad2(hours)}:${pad2(minutes)}:${pad2(secs)}`
   return `${pad2(minutes)}:${pad2(secs)}`
-}
-
-/** 对齐 models._srt_time：HH:MM:SS,mmm */
-export function srtTime(seconds: number): string {
-  const totalMs = Math.max(0, Math.round(seconds * 1000))
-  const hours = Math.floor(totalMs / 3_600_000)
-  const remainder = totalMs % 3_600_000
-  const minutes = Math.floor(remainder / 60_000)
-  const rest = remainder % 60_000
-  const secs = Math.floor(rest / 1000)
-  const millis = rest % 1000
-  return `${pad2(hours)}:${pad2(minutes)}:${pad2(secs)},${pad3(millis)}`
-}
-
-/** 对齐 Transcript.to_srt */
-export function toSrt(segments: Segment[]): string {
-  return segments
-    .map(
-      (segment, index) =>
-        `${index + 1}\n${srtTime(segment.start)} --> ${srtTime(segment.end)}\n${segment.text}\n`
-    )
-    .join('\n')
 }
 
 /** 对齐 summarize.chunk_segments：秒数与字数双阈值切块 */
